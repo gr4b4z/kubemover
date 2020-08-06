@@ -1,5 +1,6 @@
 # Move kubernetes workload between clusters.
 
+## Run locally 
 Run ``` kubectl proxy --context source-cluster-context ```
 Run ``` kubectl proxy --port 8011 --context destination-cluster-context ```
 
@@ -7,7 +8,7 @@ Run the script.
 
 tsc && node /dist/index.js  cluster123-d cluster456 --ns sg-test
 
-# Docker
+## Run as docker 
 
 Run as a docker container
 
@@ -24,4 +25,23 @@ docker run -v ~/.kube/config:/cfg/config gr4b4z/kubemover  -s cluster123 -d clus
 
 ``` 
 
+## E2E Tests
+The easies way to test is to use KIND cluster. 
+```
 
+kind create cluster  --kubeconfig config --name source-cluster
+kind create cluster  --kubeconfig config --name target-cluster
+
+kubectl create ns test1234 --context kind-source-cluster --kubeconfig config
+kubectl run nginx --image=nginx --replicas=1 -n test1234 --context kind-source-cluster --kubeconfig config
+
+
+docker run --network=host -v $(pwd)/config:/cfg/config gr4b4z/kubemover  -s kind-source-cluster -d kind-target-cluster --ns test1234
+
+kubectl get pods -n test1234 --context kind-target-cluster --kubeconfig config 
+
+kind delete cluster --name target-cluster
+kind delete cluster --name source-cluster
+
+
+```
