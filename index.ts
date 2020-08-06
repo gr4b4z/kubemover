@@ -1,13 +1,22 @@
 import fetch from 'node-fetch'
 import fs from 'fs'
+import minimist from 'minimist';
 
-const SOURCE_PROXY = "http://localhost:8001";
-const TARGET_PROXY = "http://localhost:8011";
-const NAMESPACES = ["example_ns"];
+var argv = minimist(process.argv.slice(2));
+console.log(argv)
+
+const SOURCE_PROXY = argv["source"] || "http://localhost:8001";
+const TARGET_PROXY = argv["target"] || "http://localhost:8011";
+let ns = argv["ns"] || ["example_ns"]
+const NAMESPACES = Array.isArray(ns) ? ns : [ns];
+
+console.log(`Starting migration from ${SOURCE_PROXY} to ${TARGET_PROXY}. Namespaces: ${ns}`);
 
 (async function () {
 
+    console.log("Connecting to source")
     let resourcesToRecreate: any[] = await getAvaiableResourcesOnCluster(SOURCE_PROXY);
+    console.log("Connecting to target")
     let resourcesOnTarget: any[] = await getAvaiableResourcesOnCluster(TARGET_PROXY);
 
     let diff = resourcesToRecreate.filter(e => resourcesOnTarget.every(tr => tr.path + tr.name != e.path + e.name));
@@ -20,8 +29,12 @@ const NAMESPACES = ["example_ns"];
     let missingApiPaths = new Set(diff.map(e => e.path));
 
     let namespacesToCopyFrom = await getSourceNamespaces(SOURCE_PROXY);
-
+    if (namespacesToCopyFrom.length == 0) {
+        console.log("No namespaces found that match filter criteria:\n" + namespacesToCopyFrom.join(','))
+        process.exit(1);
+    }
     console.log("Resources will be copied from below namespaces:\n" + namespacesToCopyFrom.join(','))
+    await createNamespaces(TARGET_PROXY, namespacesToCopyFrom);
 
     for (const namespace of namespacesToCopyFrom) {
 
@@ -30,11 +43,12 @@ const NAMESPACES = ["example_ns"];
 
             let resources = await readResourcesFromSource(resourcesToRecreate, namespace, SOURCE_PROXY)
             let resourcesThatCanBeCreated = resources.filter(e => !missingApiPaths.has(e.apiPath));
-            await createResourcesOnTarget(resourcesThatCanBeCreated, TARGET_PROXY);
-            for (const iterator of resourcesThatCanBeCreated) {
-                dumpFile(iterator)
 
-            }
+            await createResourcesOnTarget(resourcesThatCanBeCreated, TARGET_PROXY);
+
+            // for (const iterator of resourcesThatCanBeCreated) {
+            //     dumpFile(iterator)
+            // }
         } catch (error) {
             console.error(error);
         }
@@ -59,7 +73,7 @@ async function createResourcesOnTarget(resources: { prefix: string; apiPath: any
         if (pathsResponse.status < 300) {
             console.log("Resource created")
         } else if (pathsResponse.status == 409) {
-            console.log("Conflict ")
+            console.log("Conflict. Resource exists ")
             console.error(await pathsResponse.json());
         }
         else {
@@ -67,6 +81,18 @@ async function createResourcesOnTarget(resources: { prefix: string; apiPath: any
             console.error(await pathsResponse.json());
         }
     }
+}
+async function createNamespaces(url: string, namespaces: string[]) {
+    let resource = namespaces.map(e => ({
+        prefix: "/api/v1/namespaces", apiPath: null, o: {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": e,
+            }
+        }
+    }))
+    await createResourcesOnTarget(resource, url);
 }
 async function getSourceNamespaces(url: string) {
     let pathsResponse = await fetch(url + '/api/v1/namespaces');
@@ -76,7 +102,6 @@ async function getSourceNamespaces(url: string) {
     let regex = NAMESPACES.map(e => new RegExp(e));
     let namespacesToCopyFrom = namespacesOnTheCluster.filter(ns => regex.find(re => re.test(ns)));
     return namespacesToCopyFrom;
-
 }
 async function getAvaiableResourcesOnCluster(url: string) {
     let resourcesToRecreate: any[] = [];
