@@ -26,7 +26,7 @@ docker run -v ~/.kube/config:/cfg/config gr4b4z/kubemover  -s cluster123 -d clus
 ``` 
 
 ## E2E Tests
-The easies way to test is to use KIND cluster. 
+The easies way to test is to use [KIND](https://kind.sigs.k8s.io/) cluster. 
 ```
 
 kind create cluster  --kubeconfig config --name source-cluster
